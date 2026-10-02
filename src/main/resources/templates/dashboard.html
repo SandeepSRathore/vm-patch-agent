@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${inventory != null ? inventory.system.hostname + ' · Patch Agent' : 'Patch Agent'}">Patch Agent</title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1 th:text="${inventory != null ? inventory.system.hostname : 'Patch Agent'}">DEMO-APP01</h1>
+      <div class="meta" th:if="${inventory != null}">
+        <span th:text="${inventory.system.caption}">Windows Server 2022</span>
+        · build <b th:text="${inventory.system.osBuild}">20348.2700</b>
+        · updates from <b th:text="${inventory.system.wsusServer != null ? 'WSUS ' + inventory.system.wsusServer : 'Microsoft Update'}">Microsoft Update</b>
+        · last scan <b th:text="${collectedAt}">2026-10-02 09:00</b>
+      </div>
+    </div>
+    <div class="actions">
+      <span class="user" th:if="${currentUser != null}">
+        <span th:text="${currentUser.name}">CORP\alice</span> ·
+        <form method="post" th:action="@{/logout}"><button type="submit" class="link-button">Sign out</button></form>
+      </span>
+      <form method="post" th:action="@{/feeds/refresh}">
+        <button type="submit" class="secondary" th:disabled="${feedSyncRunning}" th:text="${feedSyncRunning ? 'Syncing feeds…' : 'Sync feeds'}">Sync feeds</button>
+      </form>
+      <form method="post" th:action="@{/inventory/refresh}">
+        <button type="submit" th:disabled="${scanRunning}" th:text="${scanRunning ? 'Scanning…' : 'Rescan now'}">Rescan now</button>
+      </form>
+    </div>
+  </header>
+
+  <div class="alert ok" th:if="${notice}" th:text="${notice}">Scan started.</div>
+  <div class="alert error" th:if="${problem}" th:text="${problem}">Cannot approve.</div>
+  <div class="alert error" th:if="${lastFailure != null}">
+    Last scan failed at <span th:text="${lastFailureAt}"></span>: <span th:text="${lastFailure.message}"></span>
+  </div>
+
+  <section th:if="${inventory == null}">
+    <p class="empty" th:text="${scanRunning ? 'First scan in progress. A Windows Update search can take several minutes.' : 'No scan has completed yet.'}">No scan yet.</p>
+  </section>
+
+  <th:block th:if="${inventory != null}" th:with="security=${inventory.missingSecurityUpdates()}">
+    <div class="alert warn" th:each="w : ${report.warnings}" th:text="${w}">Warning</div>
+
+    <div class="summary">
+      <div class="stat" th:classappend="${report.openCves().isEmpty() ? 'good' : 'bad'}">
+        <div class="value" th:text="${report.openCves().size()}">12</div>
+        <div class="label">open CVEs</div>
+      </div>
+      <div class="stat" th:classappend="${report.exploitedCount() > 0 ? 'bad' : 'good'}">
+        <div class="value" th:text="${report.exploitedCount()}">1</div>
+        <div class="label">known to be exploited</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${report.plan.size()}">3</div>
+        <div class="label">fixes proposed</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${security.size()}">2</div>
+        <div class="label">security updates offered by Windows Update</div>
+      </div>
+    </div>
+
+    <section th:if="${!jobs.isEmpty()}">
+      <h2>Jobs</h2>
+      <div class="fix" th:each="job : ${jobs}" th:if="${job.status.isActive() or job.hasSnapshot()}">
+        <div class="fix-head">
+          <span class="badge" th:classappend="${job.status.name() == 'FAILED' ? 'pri-CRITICAL' : (job.status.isActive() ? 'pri-HIGH' : 'pri-OTHER')}"
+                th:text="${job.status.label()}">Snapshot taken</span>
+          <span class="fix-title" th:text="'Job #' + ${job.id}">Job #1</span>
+        </div>
+        <div class="fix-meta">
+          approved by <b th:text="${job.approvedBy}">CORP\alice</b> at <span th:text="${@fmt.at(job.createdAt)}"></span>
+          · <span th:text="${job.items.size()}">2</span> fixes, <span th:text="${job.cveCount()}">10</span> CVEs
+          · restart <span th:text="${job.allowReboot ? 'allowed' : 'not allowed'}">allowed</span>
+          <span th:if="${job.snapshotName != null}"> · snapshot <code th:text="${job.snapshotName}">vpa-job-1</code></span>
+          <span th:if="${job.snapshotCreatedAt != null}"> taken <span th:text="${@fmt.at(job.snapshotCreatedAt)}"></span></span>
+        </div>
+        <div class="fix-meta" th:text="${#strings.listJoin(job.items.![title], ' · ')}">KB5122882 · Upgrade 7-Zip</div>
+        <div class="fix-note" th:if="${job.statusDetail != null}" th:text="${job.statusDetail}">detail</div>
+        <div class="fix-note" th:if="${job.status.name() == 'AWAITING_INSTALL'}">
+          Installing approved fixes arrives in the next milestone (M4). The snapshot slows the VM's disk while it exists:
+          cancel and delete it if the job will not run soon.
+        </div>
+        <div class="actions" style="margin-top:8px">
+          <form method="post" th:if="${job.canCancel()}" th:action="@{/jobs/{id}/cancel(id=${job.id})}">
+            <button type="submit" class="secondary">Cancel job</button>
+          </form>
+          <form method="post" th:if="${job.canDeleteSnapshot()}" th:action="@{/jobs/{id}/delete-snapshot(id=${job.id})}">
+            <button type="submit" class="secondary">Delete snapshot</button>
+          </form>
+        </div>
+        <details th:if="${revertInstructions.containsKey(job.id)}">
+          <summary>How to revert to this snapshot</summary>
+          <p class="meta">Revert from outside this VM: reverting powers it off, and nothing on the VM could power it back on.</p>
+          <pre th:text="${revertInstructions.get(job.id)}">govc snapshot.revert ...</pre>
+        </details>
+      </div>
+      <details>
+        <summary>All recent jobs</summary>
+        <table>
+          <thead><tr><th>Job</th><th>Status</th><th>Approved by</th><th>When</th><th>Fixes</th></tr></thead>
+          <tbody>
+          <tr th:each="job : ${jobs}">
+            <td th:text="'#' + ${job.id}">#1</td>
+            <td th:text="${job.status.label()}">Cancelled</td>
+            <td th:text="${job.approvedBy}">CORP\alice</td>
+            <td th:text="${@fmt.at(job.createdAt)}">2026-10-02</td>
+            <td th:text="${#strings.listJoin(job.items.![title], ' · ')}">KB</td>
+          </tr>
+          </tbody>
+        </table>
+      </details>
+    </section>
+
+    <form method="post" th:action="@{/jobs}">
+    <section>
+      <h2>Recommended fixes</h2>
+      <p class="readonly" th:if="${activeJob == null and snapshotReadiness.ready}">
+        Tick the fixes to approve. Approving takes a vSphere snapshot of this VM first; installing arrives in the next milestone.
+      </p>
+      <div class="alert warn" th:if="${!snapshotReadiness.ready}" th:text="${snapshotReadiness.reason}">vSphere not configured</div>
+      <p class="readonly" th:if="${activeJob != null}" th:text="'Job #' + ${activeJob.id} + ' is active. Finish or cancel it before approving more fixes.'">Job active</p>
+      <p class="empty" th:if="${report.plan.isEmpty()}">Nothing to fix based on the data synced so far.</p>
+      <div class="fix" th:each="item : ${report.plan}">
+        <div class="fix-head">
+          <input type="checkbox" name="items" th:value="${item.key()}" th:id="'item-' + ${itemStat.index}"
+                 th:disabled="${activeJob != null or !snapshotReadiness.ready}">
+          <span class="badge" th:classappend="'pri-' + ${item.priority()}" th:text="${item.priority().label()}">Critical</span>
+          <label class="fix-title inline" th:for="'item-' + ${itemStat.index}" th:text="${item.title}">Windows cumulative update KB5122882</label>
+          <span class="badge pri-ACTIVELY_EXPLOITED" th:if="${item.kevCount() > 0}" th:text="${item.kevCount()} + ' in CISA KEV'">1 in CISA KEV</span>
+        </div>
+        <div class="fix-meta">
+          <th:block th:switch="${item.kind.name()}">
+            <span th:case="'APP_UPGRADE'">
+              <b th:text="${item.installedVersion}">24.08</b> → <b th:text="${item.targetVersion != null ? item.targetVersion + ' or later' : 'latest release'}">24.09</b>
+              <span th:if="${item.wingetId != null}"> · winget <code th:text="${item.wingetId}">7zip.7zip</code></span>
+            </span>
+            <span th:case="'WINDOWS_CUMULATIVE'">
+              <b th:text="${item.kb}">KB</b> · Windows <b th:text="${item.installedVersion}">10.0.20348.2700</b> → <b th:text="${item.targetVersion}">10.0.20348.5622</b>
+              · reboot required
+              · <span th:text="${item.offeredByWindowsUpdate ? 'offered by Windows Update' : 'not offered by Windows Update yet'}">offered</span>
+            </span>
+            <span th:case="*">
+              <b th:text="${item.kb}">KB</b><span th:if="${item.rebootLikely}"> · may reboot</span> · offered by Windows Update
+            </span>
+          </th:block>
+          · fixes <b th:text="${item.cves.size()}">3</b> CVEs
+        </div>
+        <div class="fix-note" th:if="${item.note != null}" th:text="${item.note}">Note</div>
+        <details th:unless="${item.cves.isEmpty()}">
+          <summary th:text="'Show ' + ${item.cves.size()} + ' CVEs'">Show CVEs</summary>
+          <table>
+            <thead><tr><th>CVE</th><th>Severity</th><th class="num">CVSS</th><th>Exploited</th><th>Description</th></tr></thead>
+            <tbody>
+            <tr th:each="c : ${item.cves}">
+              <td class="nowrap"><a th:href="${c.nvdUrl()}" th:text="${c.cve}" target="_blank" rel="noopener">CVE</a></td>
+              <td th:text="${c.severity != null ? c.severity : '—'}">Important</td>
+              <td class="num" th:text="${c.cvss != null ? #numbers.formatDecimal(c.cvss, 1, 1) : '—'}">7.0</td>
+              <td class="nowrap">
+                <span class="badge pri-ACTIVELY_EXPLOITED" th:if="${c.inKev()}" th:text="'KEV, due ' + ${c.kevDueDate}">KEV</span>
+                <span class="badge pri-ACTIVELY_EXPLOITED" th:if="${c.exploitedPerMsrc and !c.inKev()}">MSRC: exploited</span>
+              </td>
+              <td th:text="${c.title}">Elevation of privilege</td>
+            </tr>
+            </tbody>
+          </table>
+        </details>
+      </div>
+      <div class="approve" th:if="${!report.plan.isEmpty() and activeJob == null and snapshotReadiness.ready}">
+        <label class="inline"><input type="checkbox" name="allowReboot" value="true"> Allow restart (required for Windows updates)</label>
+        <button type="submit">Approve selected fixes</button>
+      </div>
+    </section>
+    </form>
+
+    <section>
+      <h2>Installed programs</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Version</th><th>Status</th><th>Publisher</th><th>Arch</th></tr></thead>
+        <tbody>
+        <tr th:each="a : ${report.apps}">
+          <td th:text="${a.app.name}">7-Zip</td>
+          <td th:text="${a.app.version}">24.08</td>
+          <td>
+            <span class="badge" th:classappend="'st-' + ${a.status}" th:text="${a.status.name() == 'VULNERABLE' ? a.openCves + ' CVEs' : a.status.label()}">Vulnerable</span>
+            <div class="meta" th:if="${a.note != null}" th:text="${a.note}"></div>
+          </td>
+          <td th:text="${a.app.publisher}">Igor Pavlov</td>
+          <td th:text="${a.app.architecture}">x64</td>
+        </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Vulnerability feeds</h2>
+      <table>
+        <thead><tr><th>Feed</th><th>Last successful sync</th><th>Holds</th></tr></thead>
+        <tbody>
+        <tr th:each="f : ${feeds}">
+          <td th:text="${f.title}">MSRC</td>
+          <td th:text="${f.lastSuccess != null ? f.lastSuccess : 'never'}">2026-10-02 09:00</td>
+          <td>
+            <span th:text="${f.summary}"></span>
+            <div class="error-text" th:if="${f.error != null}" th:text="'Last attempt (' + ${f.lastAttempt} + ') failed: ' + ${f.error}"></div>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <details>
+        <summary>Audit trail</summary>
+        <p class="meta">Also written to the Windows Application log (source VmPatchAgent). Forward that log off the VM:
+          reverting a snapshot erases everything recorded on the VM after it.</p>
+        <table>
+          <thead><tr><th>When</th><th>Who</th><th>What</th><th>Job</th><th>Detail</th></tr></thead>
+          <tbody>
+          <tr th:each="e : ${auditEvents}">
+            <td class="nowrap" th:text="${@fmt.at(e.at)}">2026-10-02</td>
+            <td th:text="${e.actor}">CORP\alice</td>
+            <td th:text="${e.action}">JOB_APPROVED</td>
+            <td th:text="${e.jobId != null ? '#' + e.jobId : ''}">#1</td>
+            <td th:text="${e.detail}">detail</td>
+          </tr>
+          </tbody>
+        </table>
+      </details>
+    </section>
+
+    <section>
+      <details>
+        <summary th:text="'Other pending updates (' + ${inventory.missingUpdates.size() - security.size()} + ')'">Other pending updates</summary>
+        <table>
+          <tbody>
+          <tr th:each="u : ${inventory.missingUpdates}" th:unless="${u.isSecurityUpdate()}">
+            <td th:text="${#strings.listJoin(u.kbs, ', ')}">KB2267602</td>
+            <td th:text="${u.title}">Defender update</td>
+          </tr>
+          </tbody>
+        </table>
+      </details>
+    </section>
+
+    <section>
+      <details>
+        <summary th:text="'Installed hotfixes (' + ${inventory.system.installedUpdates.size()} + ')'">Installed hotfixes</summary>
+        <table>
+          <tbody>
+          <tr th:each="h : ${inventory.system.installedUpdates}">
+            <td th:text="${h.kb}">KB5042349</td>
+            <td th:text="${h.description}">Security Update</td>
+            <td th:text="${h.installedOn != null ? h.installedOn : 'date not recorded'}">2026-08-14</td>
+          </tr>
+          </tbody>
+        </table>
+      </details>
+    </section>
+  </th:block>
+</main>
+</body>
+</html>

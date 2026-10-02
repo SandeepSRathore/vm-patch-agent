@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Patch Agent</title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+<main>
+  <section class="signin">
+    <h1>Patch Agent</h1>
+    <p class="meta" th:text="${hostname != null ? 'Sign in to approve changes on ' + hostname + '.' : 'Sign in to approve changes on this VM.'}">Sign in</p>
+    <div class="alert error" th:if="${error != null}" th:text="${error}">Wrong password</div>
+    <div class="alert ok" th:if="${param.signedOut}">Signed out.</div>
+    <form method="post" th:action="@{/login}">
+      <label for="username">Windows account</label>
+      <input type="text" id="username" name="username" autocomplete="username" autofocus
+             placeholder="DOMAIN\user, user@domain, or a local user">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password">
+      <button type="submit">Sign in</button>
+    </form>
+    <p class="meta">Members of the approver group only (default: local Administrators).</p>
+  </section>
+</main>
+</body>
+</html>

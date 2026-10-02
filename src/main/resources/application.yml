@@ -1,0 +1,118 @@
+server:
+  # Dashboard is reachable only from this VM (admins RDP in). Do not bind to a network interface.
+  address: 127.0.0.1
+  port: ${PORT:8090}
+  servlet:
+    session:
+      timeout: 15m
+
+spring:
+  application:
+    name: vm-patch-agent
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:h2:file:${agent.data-dir}/db/agent
+    username: sa
+    password: ""
+  thymeleaf:
+    cache: true
+
+agent:
+  data-dir: ${VPA_DATA_DIR:C:/ProgramData/VmPatchAgent}
+  scripts:
+    mode: powershell
+    powershell-path: ${VPA_POWERSHELL:C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe}
+    # A first Windows Update search on a stale VM can take many minutes.
+    timeout: 30m
+  inventory:
+    refresh-interval: 1h
+    keep-snapshots: 50
+  feeds:
+    refresh-interval: 2h
+    msrc:
+      lookback-months: 12
+    nvd:
+      # Optional. Request one at https://nvd.nist.gov/developers/request-an-api-key to sync about 8x faster.
+      api-key: ${VPA_NVD_API_KEY:}
+  security:
+    mode: windows
+    # Who may sign in and approve. Default: BUILTIN\Administrators. Use a domain group's SID to narrow it.
+    approver-group-sid: S-1-5-32-544
+  vsphere:
+    mode: govc
+    govc-path: ${VPA_GOVC:C:/Program Files/VmPatchAgent/govc.exe}
+    # e.g. https://vcenter.corp.example/sdk; on standalone ESXi, https://esxi01.corp.example/sdk
+    url: ${VPA_VSPHERE_URL:}
+    # Service account whose role allows only snapshot create/remove on this VM.
+    username: ${VPA_VSPHERE_USER:}
+    password-file: ${agent.data-dir}/secrets/vsphere-password.dpapi
+    # This VM's inventory path, e.g. /DC1/vm/Apps/APP01 (vCenter) or /ha-datacenter/vm/APP01 (ESXi).
+    vm: ${VPA_VSPHERE_VM:}
+    quiesce: true
+  # Third-party programs the agent assesses. name-pattern is matched against the uninstall-registry DisplayName;
+  # the first match wins. cpe must be written exactly as NVD writes it. Programs not listed show as "not tracked".
+  catalog:
+    apps:
+      - label: 7-Zip
+        name-pattern: '^7-Zip\b'
+        cpe: 'cpe:2.3:a:7-zip:7-zip'
+        winget-id: 7zip.7zip
+      - label: Google Chrome
+        name-pattern: '^Google Chrome$'
+        cpe: 'cpe:2.3:a:google:chrome'
+        winget-id: Google.Chrome
+      - label: Microsoft Edge
+        name-pattern: '^Microsoft Edge$'
+        cpe: 'cpe:2.3:a:microsoft:edge_chromium'
+        winget-id: Microsoft.Edge
+      - label: Mozilla Firefox ESR
+        name-pattern: '^Mozilla Firefox ESR\b'
+        cpe: 'cpe:2.3:a:mozilla:firefox_esr'
+        winget-id: Mozilla.Firefox.ESR
+      - label: Mozilla Firefox
+        name-pattern: '^Mozilla Firefox\b'
+        cpe: 'cpe:2.3:a:mozilla:firefox'
+        winget-id: Mozilla.Firefox
+      - label: Notepad++
+        name-pattern: '^Notepad\+\+'
+        cpe: 'cpe:2.3:a:notepad-plus-plus:notepad\+\+'
+        winget-id: Notepad++.Notepad++
+      - label: PuTTY
+        name-pattern: '^PuTTY release'
+        cpe: 'cpe:2.3:a:putty:putty'
+        winget-id: PuTTY.PuTTY
+      - label: WinRAR
+        name-pattern: '^WinRAR\b'
+        cpe: 'cpe:2.3:a:rarlab:winrar'
+        winget-id: RARLab.WinRAR
+      - label: VMware Tools
+        name-pattern: '^VMware Tools$'
+        cpe: 'cpe:2.3:a:vmware:tools'
+        # Upgraded from vCenter, not winget.
+        winget-id: ''
+
+---
+# Off-Windows development: canned inventory, data under ./target. Run with SPRING_PROFILES_ACTIVE=demo.
+spring:
+  config:
+    activate:
+      on-profile: demo
+  thymeleaf:
+    cache: false
+agent:
+  data-dir: ./target/demo-data
+  scripts:
+    mode: demo
+  security:
+    mode: demo
+    demo-users:
+      - username: admin
+        password: admin
+        group-sids: [S-1-5-32-544]
+      - username: viewer
+        password: viewer
+        group-sids: [S-1-5-32-545]
+  vsphere:
+    mode: fake
