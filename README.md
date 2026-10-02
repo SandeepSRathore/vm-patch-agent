@@ -7,6 +7,14 @@ An agent that runs on each Windows VM hosted on VMware vCenter or ESXi. When a n
 > **Installing the approved fixes (M4) is not built yet.** The agent has **never been run on Windows or against a real vCenter**: all testing was on macOS, with simulated Windows output and simulated snapshots.
 > See [What is not done](#what-is-not-done) before deploying anywhere.
 
+![Dashboard: fixes ranked with exploited-in-the-wild first, two ticked for approval](docs/images/dashboard-fixes.png)
+
+*Demo VM (Windows Server 2022, build 20348.2700) matched against the live MSRC, NVD and CISA KEV feeds. Each fix shows the version jump, how it is installed and how many CVEs it closes. Fixes containing exploited CVEs come first.*
+
+![An approved job: who approved what, the snapshot taken, and how to revert](docs/images/approved-job.png)
+
+*After approval: the job records the approver, the exact fixes, restart consent and the vSphere snapshot. In demo mode snapshots are simulated, so the revert box shows placeholder text. With govc configured it shows the vCenter steps and govc commands.*
+
 ---
 
 ## Contents
